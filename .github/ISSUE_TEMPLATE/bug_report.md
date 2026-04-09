@@ -27,7 +27,7 @@ What actually happened? (Include error messages or stderr output)
 - OS: [e.g., macOS 15, Ubuntu 24.04]
 - Shell: [e.g., bash, zsh]
 - jq version: [run `jq --version`]
-- AgentGuard version: [check `VERSION` file]
+- OpSentry version: [check `VERSION` file]
 
 **Additional context**
 Any other information (log entries from `~/.claude/guardrail-blocks.log`, etc.)

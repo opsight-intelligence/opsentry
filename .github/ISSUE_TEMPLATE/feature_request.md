@@ -6,7 +6,7 @@ labels: enhancement
 assignees: ''
 ---
 
-**What pattern should AgentGuard block?**
+**What pattern should OpSentry block?**
 Describe the dangerous command, file access, or code pattern.
 
 **Why is this dangerous?**

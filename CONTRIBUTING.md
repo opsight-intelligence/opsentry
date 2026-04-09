@@ -1,12 +1,12 @@
-# Contributing to AgentGuard
+# Contributing to OpSentry
 
-Thanks for your interest in contributing to AgentGuard.
+Thanks for your interest in contributing to OpSentry.
 
 ## How to Contribute
 
 ### Reporting Bugs
 
-Open a [GitHub issue](https://github.com/opsight-intelligence/agentguard/issues) with:
+Open a [GitHub issue](https://github.com/opsight-intelligence/opsentry/issues) with:
 - What you expected to happen
 - What actually happened
 - Steps to reproduce
@@ -14,7 +14,7 @@ Open a [GitHub issue](https://github.com/opsight-intelligence/agentguard/issues)
 
 ### Suggesting New Patterns
 
-If you find a dangerous pattern that AgentGuard should block, open an issue with:
+If you find a dangerous pattern that OpSentry should block, open an issue with:
 - The pattern (command, file path, or code snippet)
 - Why it should be blocked
 - Which hook script should handle it
@@ -38,7 +38,7 @@ If you find a dangerous pattern that AgentGuard should block, open an issue with
 
 ### Adding a New Hook
 
-1. Create the script in `agentguard/claude/hooks/`
+1. Create the script in `opsentry/claude/hooks/`
 2. Follow the existing pattern: parse JSON stdin, check patterns, exit 0 or 2
 3. Add the `log_block` function for incident logging
 4. Add tests to `test.sh`

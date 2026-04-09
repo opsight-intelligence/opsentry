@@ -1,3 +1,3 @@
 #!/bin/bash
 # Shortcut: delegates to the main updater.
-exec "$(dirname "$0")/agentguard/update.sh" "$@"
+exec "$(dirname "$0")/opsentry/update.sh" "$@"

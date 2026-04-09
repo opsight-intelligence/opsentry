@@ -1,4 +1,4 @@
-# AgentGuard Quickstart
+# OpSentry Quickstart
 
 Get AI agent security guardrails running in under 10 minutes.
 
@@ -11,7 +11,7 @@ Get AI agent security guardrails running in under 10 minutes.
 ## Option A: One-Line Install
 
 ```bash
-bash <(curl -sSL https://raw.githubusercontent.com/opsight-intelligence/agentguard/main/install-agentguard.sh)
+bash <(curl -sSL https://raw.githubusercontent.com/opsight-intelligence/opsentry/main/install-opsentry.sh)
 ```
 
 This clones the repo, runs the setup wizard, and installs everything. Follow the prompts.
@@ -21,8 +21,8 @@ This clones the repo, runs the setup wizard, and installs everything. Follow the
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/opsight-intelligence/agentguard.git ~/.agentguard
-cd ~/.agentguard
+git clone https://github.com/opsight-intelligence/opsentry.git ~/.opsentry
+cd ~/.opsentry
 ```
 
 ### 2. Install Python dependencies
@@ -55,7 +55,7 @@ python3 config/generate.py guardrails.yaml
 Or with the CLI:
 
 ```bash
-bin/agentguard install
+bin/opsentry install
 ```
 
 ### 5. Restart Claude Code
@@ -65,7 +65,7 @@ Close and reopen Claude Code. The guardrails are now active.
 ## Verify Installation
 
 ```bash
-bin/agentguard status
+bin/opsentry status
 ```
 
 Expected output:
@@ -120,7 +120,7 @@ Every PR will be scanned for secrets, SQL injection, dangerous patterns, and cod
 ## Updating
 
 ```bash
-bin/agentguard update
+bin/opsentry update
 ```
 
 This pulls the latest version and reinstalls. Your `guardrails.yaml` customizations are preserved.
@@ -134,7 +134,7 @@ Edit `guardrails.yaml` and regenerate:
 vi guardrails.yaml
 
 # Regenerate and reinstall
-bin/agentguard install
+bin/opsentry install
 ```
 
 Common customizations:

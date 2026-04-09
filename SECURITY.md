@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in AgentGuard, please report it responsibly.
+If you discover a security vulnerability in OpSentry, please report it responsibly.
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
@@ -23,9 +23,9 @@ Include:
 ## Scope
 
 This policy covers:
-- Hook scripts (`agentguard/claude/hooks/`)
-- Behavioral rules (`agentguard/claude/CLAUDE.md`)
-- Permission deny rules (`agentguard/claude/settings.json`)
+- Hook scripts (`opsentry/claude/hooks/`)
+- Behavioral rules (`opsentry/claude/CLAUDE.md`)
+- Permission deny rules (`opsentry/claude/settings.json`)
 - Installation scripts (`install.sh`, `update.sh`, `verify.sh`)
 
 ## Supported Versions

@@ -44,11 +44,12 @@ fi
 # To add locale-specific patterns, append sections below.
 # ============================================================
 
-# --- US Social Security Number (XXX-XX-XXXX) ---
-SSN_MATCH=$(echo "$CONTENT" | grep -oE '\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b' | head -1 || true)
+# --- US Social Security Number (XXX-XX-XXXX or XXX XX XXXX) ---
+# Requires at least dashes or spaces as separators to avoid false positives on 9-digit numbers
+SSN_MATCH=$(echo "$CONTENT" | grep -oE '\b[0-9]{3}[- ][0-9]{2}[- ][0-9]{4}\b' | head -1 || true)
 if [ -n "$SSN_MATCH" ]; then
   # Allow well-known synthetic test SSNs
-  IS_SYNTHETIC=$(echo "$SSN_MATCH" | grep -cE '^(000-00-0000|555-55-5555)$' || true)
+  IS_SYNTHETIC=$(echo "$SSN_MATCH" | grep -cE '^(000-00-0000|555-55-5555|000 00 0000|555 55 5555)$' || true)
   if [ "$IS_SYNTHETIC" -eq 0 ]; then
     log_block "US SSN pattern detected" "$SSN_MATCH"
     echo "BLOCKED: Content contains a pattern matching a US Social Security Number ($SSN_MATCH). Use synthetic test data like 000-00-0000 or 555-55-5555 instead. Never include real PII in source code." >&2
@@ -57,9 +58,10 @@ if [ -n "$SSN_MATCH" ]; then
 fi
 
 # --- Credit Card Numbers (Visa, Mastercard, Amex, Discover) ---
+# Catches: 4111-1111-1111-1111, 4111 1111 1111 1111, and 4111111111111111
 CC_MATCH=$(echo "$CONTENT" | grep -oE '\b(4[0-9]{3}|5[1-5][0-9]{2}|6(011|5[0-9]{2}))[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{1,4}\b' | head -1 || true)
 if [ -z "$CC_MATCH" ]; then
-  # Try Amex pattern separately: 3[47]XX-XXXXXX-XXXXX
+  # Try Amex pattern separately: 3[47]XX-XXXXXX-XXXXX or 3[47]XXXXXXXXXXXXX
   CC_MATCH=$(echo "$CONTENT" | grep -oE '\b3[47][0-9]{2}[- ]?[0-9]{6}[- ]?[0-9]{5}\b' | head -1 || true)
 fi
 if [ -n "$CC_MATCH" ]; then

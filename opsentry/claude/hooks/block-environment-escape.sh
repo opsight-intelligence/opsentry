@@ -28,15 +28,18 @@ fi
 
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
+# Optional path prefix for matching commands invoked via full path
+P='(/\S+/)?'
+
 # === SSH / SCP TO REMOTE HOSTS ===
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)(ssh|scp)\s'; then
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}(ssh|scp)\s"; then
   log_block "SSH/SCP to remote host" "$COMMAND"
   echo "BLOCKED: SSH and SCP commands are not allowed. They can be used to access remote hosts outside the local environment." >&2
   exit 2
 fi
 
 # === RSYNC WITH REMOTE TARGETS (contains user@host: or host: pattern) ===
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)rsync\s'; then
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}rsync\s"; then
   if echo "$COMMAND" | grep -qE '[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:|[a-zA-Z0-9._-]+:'; then
     log_block "rsync to remote target" "$COMMAND"
     echo "BLOCKED: rsync with remote targets is not allowed. Local rsync (without host: patterns) is permitted." >&2
@@ -45,7 +48,7 @@ if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)rsync\s'; then
 fi
 
 # === DOCKER ESCAPE OPERATIONS ===
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)docker\s+(run|exec|cp|build)\s'; then
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}docker\s+(run|exec|cp|build)\s"; then
   log_block "Docker escape operation" "$COMMAND"
   echo "BLOCKED: docker run, exec, cp, and build are not allowed. They could escape sandboxing. Read-only commands (ps, logs, images) are permitted." >&2
   exit 2
@@ -77,14 +80,14 @@ if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)export\s+PROD(UCTION)?_'; then
 fi
 
 # === TERRAFORM DESTRUCTIVE COMMANDS ===
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)terraform\s+(apply|destroy|import)\s*'; then
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}terraform\s+(apply|destroy|import)\s*"; then
   log_block "Terraform destructive command" "$COMMAND"
   echo "BLOCKED: terraform apply, destroy, and import are not allowed. Use terraform plan, fmt, or validate instead." >&2
   exit 2
 fi
 
 # === KUBECTL DESTRUCTIVE OPERATIONS ===
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)kubectl\s+(delete|exec|apply)\s'; then
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}kubectl\s+(delete|exec|apply)\s"; then
   log_block "kubectl destructive operation" "$COMMAND"
   echo "BLOCKED: kubectl delete, exec, and apply are not allowed. Read-only commands (get, describe, logs) are permitted." >&2
   exit 2

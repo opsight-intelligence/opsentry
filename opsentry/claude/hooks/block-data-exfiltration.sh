@@ -30,29 +30,34 @@ fi
 
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
+# Optional path prefix for matching commands invoked via full path
+P='(/\S+/)?'
+
 # === CURL/WGET POST WITH FILE REFERENCES ===
-if echo "$COMMAND" | grep -qE 'curl\s.*(-d\s+@|-F\s+\S*=@|--data\s+@|--data-binary\s+@)'; then
+# Catches both spaced (-d @file) and unspaced (-d@file) variants
+if echo "$COMMAND" | grep -qE "${P}curl\s.*(-d\s*@|-F\s*\S*=@|--data\s*@|--data-binary\s*@|--data-urlencode\s*@)"; then
   log_block "curl POST with file reference" "$COMMAND"
   echo "BLOCKED: curl with file upload (@file) is not allowed. This could exfiltrate local files to an external server." >&2
   exit 2
 fi
 
-if echo "$COMMAND" | grep -qE 'wget\s.*--post-file'; then
+if echo "$COMMAND" | grep -qE "${P}wget\s.*--post-file"; then
   log_block "wget --post-file" "$COMMAND"
   echo "BLOCKED: wget --post-file is not allowed. This could exfiltrate local files to an external server." >&2
   exit 2
 fi
 
 # === BASE64 ENCODING OF SENSITIVE FILES ===
-if echo "$COMMAND" | grep -qE "base64\s.*(${SENSITIVE_PATTERNS})"; then
+if echo "$COMMAND" | grep -qE "${P}base64\s.*(${SENSITIVE_PATTERNS})"; then
   log_block "base64 encoding of sensitive file" "$COMMAND"
   echo "BLOCKED: base64 encoding of sensitive files is not allowed. This is a common data exfiltration technique." >&2
   exit 2
 fi
 
-if echo "$COMMAND" | grep -qE "cat\s.*(${SENSITIVE_PATTERNS}).*\|\s*base64"; then
-  log_block "cat sensitive file piped to base64" "$COMMAND"
-  echo "BLOCKED: Piping sensitive files through base64 is not allowed. This is a common data exfiltration technique." >&2
+# Catches both "cat .env | base64" and "cat .env|base64" (no space before pipe)
+if echo "$COMMAND" | grep -qE "cat\s.*(${SENSITIVE_PATTERNS}).*\|[ \t]*${P}(base64|openssl\s+enc|xxd)"; then
+  log_block "cat sensitive file piped to encoder" "$COMMAND"
+  echo "BLOCKED: Piping sensitive files through encoding tools is not allowed. This is a common data exfiltration technique." >&2
   exit 2
 fi
 
@@ -63,7 +68,7 @@ if echo "$COMMAND" | grep -qE '(cp|mv|tee|cat\s.*>)\s.*(\/tmp\/|\/var\/tmp\/|\/d
   exit 2
 fi
 
-if echo "$COMMAND" | grep -qE '>\s*(\/tmp\/|\/var\/tmp\/|\/dev\/shm\/)'; then
+if echo "$COMMAND" | grep -qE '>{1,2}\s*(\/tmp\/|\/var\/tmp\/|\/dev\/shm\/)'; then
   log_block "Redirect to world-readable temp location" "$COMMAND"
   echo "BLOCKED: Redirecting output to /tmp/, /var/tmp/, or /dev/shm/ is not allowed. These locations are world-readable and pose a data exfiltration risk." >&2
   exit 2
@@ -85,9 +90,9 @@ if echo "$COMMAND" | grep -qE '(pbcopy|xclip|xsel|wl-copy)'; then
 fi
 
 # === NC/NETCAT OUTBOUND DATA CHANNELS ===
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)(nc|netcat|ncat)\s'; then
-  log_block "netcat outbound data channel" "$COMMAND"
-  echo "BLOCKED: nc/netcat/ncat commands are not allowed. These can be used to exfiltrate data over the network." >&2
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}(nc|netcat|ncat|socat)\s"; then
+  log_block "netcat/socat outbound data channel" "$COMMAND"
+  echo "BLOCKED: nc/netcat/ncat/socat commands are not allowed. These can be used to exfiltrate data over the network." >&2
   exit 2
 fi
 

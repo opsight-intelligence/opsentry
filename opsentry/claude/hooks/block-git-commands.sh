@@ -27,7 +27,8 @@ fi
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
 # Block any command that starts with git or contains git as a chained command
-if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)git\s'; then
+# Also catches full-path invocations like /usr/bin/git
+if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)(/\S+/)?git\s'; then
   log_block "Git command detected" "$COMMAND"
   echo "BLOCKED: Git commands are not allowed. Write the git command as text for the developer to review and run manually." >&2
   exit 2

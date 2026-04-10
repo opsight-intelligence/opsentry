@@ -47,6 +47,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
   CLAUDE_DIR_PATTERNS=(
     '~/.claude'
     '\$HOME/.claude'
+    '\${HOME}/.claude'
     '/\.claude/'
   )
   for pattern in "${CLAUDE_DIR_PATTERNS[@]}"; do
@@ -59,7 +60,7 @@ if [ "$TOOL_NAME" = "Bash" ]; then
 
   # --- B. Scope boundary enforcement -- block writes to system locations ---
   # Only trigger when the command contains a write indicator
-  WRITE_INDICATORS='(>|>>|(^|[[:space:]])cp[[:space:]]|(^|[[:space:]])mv[[:space:]]|(^|[[:space:]])tee[[:space:]]|(^|[[:space:]])install[[:space:]]|(^|[[:space:]])rsync[[:space:]])'
+  WRITE_INDICATORS='(>|>>|(^|[[:space:]])(cp|mv|tee|install|rsync|dd|chmod)[[:space:]]|sed\s+-[a-zA-Z]*i)'
 
   if echo "$COMMAND" | grep -qE "$WRITE_INDICATORS"; then
     # System paths that must not be written to

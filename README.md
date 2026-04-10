@@ -99,8 +99,30 @@ any personal customisations.
 
 ./test.sh
 
-88 automated tests covering blocked and allowed cases
-for every hook.
+155 automated tests (88 functional + 67 adversarial red-team)
+covering blocked and allowed cases for every hook.
+
+---
+
+## Red team tested
+
+We attacked our own framework with 8 adversarial attack classes
+and documented every finding, patch, and residual risk.
+
+Read the full report: [docs/red-team-log.md](docs/red-team-log.md)
+
+| Attack | Vector | Status |
+|---|---|---|
+| 1 | Indirect file read via interpreters | Patched |
+| 2 | Write tool content blind spot | Patched |
+| 3 | Prompt injection + guardrail self-destruction | Patched |
+| 4 | Edit tool salami attack (cross-file composition) | Patched (residual at CI layer) |
+| 5 | Environment variable poisoning | Patched |
+| 6 | Symlink redirection | Patched |
+| 7 | Persistence and delayed execution | Patched |
+| 8 | Hook starvation via resource exhaustion | Patched |
+
+No other AI agent security tool publishes adversarial testing evidence.
 
 ---
 

@@ -29,11 +29,28 @@ OpSentry is built specifically for this architecture.
 
 ## Install in 2 minutes
 
-git clone https://github.com/opsight-intelligence/opsentry
-cd opsentry
-./install.sh
+**pip (recommended)**
 
-Restart Claude Code. That's it.
+    pip install opsentry
+    opsentry install
+
+**Homebrew**
+
+    brew tap opsight-intelligence/opsentry
+    brew install opsentry
+    opsentry install
+
+**Git clone**
+
+    git clone https://github.com/opsight-intelligence/opsentry
+    cd opsentry
+    ./install.sh
+
+**GitHub Action (CI/CD)**
+
+    uses: opsight-intelligence/opsentry-action@v1
+
+Restart Claude Code after install. That's it.
 
 **Prerequisites:** jq must be installed.
 - macOS: brew install jq

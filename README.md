@@ -116,8 +116,10 @@ any personal customisations.
 
 ./test.sh
 
-155 automated tests (88 functional + 67 adversarial red-team)
-covering blocked and allowed cases for every hook.
+168 automated tests (101 functional + 67 adversarial red-team)
+covering blocked and allowed cases for every hook, including
+project-local `.claude/` directories, `~/Library/` on macOS,
+`/var/folders/`, and symlink-based bypass attempts.
 
 ---
 
@@ -165,7 +167,7 @@ Full deterministic enforcement requires Claude Code.
 | 70+ permission denials | ✓ | ✓ | ✓ |
 | 3 slash commands | ✓ | ✓ | ✓ |
 | Incident logging | ✓ | ✓ | ✓ |
-| 88 automated tests | ✓ | ✓ | ✓ |
+| 168 automated tests | ✓ | ✓ | ✓ |
 | CI/CD agents (GitHub Actions) | | ✓ | ✓ |
 | LLM-powered code review (BYOK) | | ✓ | ✓ |
 | Auto-fix on PR | | ✓ | ✓ |

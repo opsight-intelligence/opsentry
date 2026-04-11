@@ -245,22 +245,54 @@ HOOK="$HOOKS_DIR/block-scope-escape.sh"
 echo ""
 echo "--- block-scope-escape.sh (BLOCKED) ---"
 
-run_test "Block Read ~/.claude/ file" "$HOOK" \
+# --- Setup fixtures for block-scope-escape tests ---
+# Test environment is sandboxed via export HOME=$(mktemp -d) at the top of the
+# script, so $HOME points at a fresh temp dir. Create the layout the new
+# precise-match hook needs:
+#   $HOME/.claude/                 - the protected install target
+#   $HOME/.claude/CLAUDE.md        - a real file inside (for Read/Edit tests)
+#   $HOME/Library/                 - should NOT be confused with /Library/
+#   $HOME/proj/.claude/commands/   - project-local Claude config (must be allowed)
+#   $HOME/notes/symlink_to_claude  - symlink into $HOME/.claude (must still be blocked)
+mkdir -p "$HOME/.claude/hooks" "$HOME/Library/Application Support" \
+         "$HOME/proj/.claude/commands" "$HOME/proj/.claude/skills" "$HOME/notes"
+echo "guardrail content" > "$HOME/.claude/CLAUDE.md"
+echo "{}" > "$HOME/.claude/settings.json"
+echo "test" > "$HOME/proj/.claude/commands/test.md"
+echo "test" > "$HOME/proj/.claude/skills/test.md"
+ln -sf "$HOME/.claude/CLAUDE.md" "$HOME/notes/symlink_to_claude" 2>/dev/null || true
+
+run_test "Block Read ~/.claude/ file (tilde form)" "$HOOK" \
   '{"tool_name":"Read","tool_input":{"file_path":"~/.claude/CLAUDE.md"}}' 2
 
-run_test "Block Write to ~/.claude/" "$HOOK" \
-  '{"tool_name":"Write","tool_input":{"file_path":"/Users/dev/.claude/settings.json"}}' 2
+run_test "Block Write to \$HOME/.claude/settings.json" "$HOOK" \
+  "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/settings.json\"}}" 2
 
-run_test "Block Edit ~/.claude/ file" "$HOOK" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"/Users/dev/.claude/hooks/hook.sh"}}' 2
+run_test "Block Edit \$HOME/.claude/hooks/hook.sh" "$HOOK" \
+  "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$HOME/.claude/hooks/hook.sh\"}}" 2
 
-run_test "Block bash referencing ~/.claude" "$HOOK" \
+run_test "Block Read symlink resolving to \$HOME/.claude (realpath)" "$HOOK" \
+  "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$HOME/notes/symlink_to_claude\"}}" 2
+
+run_test "Block bash referencing ~/.claude (literal tilde)" "$HOOK" \
   '{"tool_name":"Bash","tool_input":{"command":"cat ~/.claude/settings.json"}}' 2
+
+run_test "Block bash referencing \$HOME/.claude (expanded)" "$HOOK" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cat $HOME/.claude/settings.json\"}}" 2
 
 run_test "Block write to /etc/" "$HOOK" \
   '{"tool_name":"Bash","tool_input":{"command":"cp config.conf /etc/myapp/"}}' 2
 
-run_test "Block write to shell config" "$HOOK" \
+run_test "Block write to /Library/ (system)" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cp foo /Library/LaunchDaemons/x.plist"}}' 2
+
+run_test "Block write to /var/cache/" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cp foo /var/cache/myapp/x"}}' 2
+
+run_test "Block write to /var/tmp/ (CLAUDE.md rule 12)" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cp secrets /var/tmp/x"}}' 2
+
+run_test "Block write to shell config (~/.bashrc)" "$HOOK" \
   '{"tool_name":"Bash","tool_input":{"command":"echo export PATH >> ~/.bashrc"}}' 2
 
 run_test "Block write to /usr/" "$HOOK" \
@@ -277,6 +309,32 @@ run_test "Allow Bash in project dir" "$HOOK" \
 
 run_test "Allow reading /etc/ (not writing)" "$HOOK" \
   '{"tool_name":"Bash","tool_input":{"command":"cat /etc/hosts"}}' 0
+
+# --- New ALLOWED cases that the previous over-broad version blocked ---
+
+run_test "Allow Read of project-local .claude/commands/ file" "$HOOK" \
+  "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$HOME/proj/.claude/commands/test.md\"}}" 0
+
+run_test "Allow Edit of project-local .claude/skills/ file" "$HOOK" \
+  "{\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"$HOME/proj/.claude/skills/test.md\"}}" 0
+
+run_test "Allow Write to a project-local .claude/ subfile" "$HOOK" \
+  "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/proj/.claude/commands/new.md\"}}" 0
+
+run_test "Allow Bash cp into ~/Library/Application Support" "$HOOK" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cp data.json $HOME/Library/Caches/myapp/x.json\"}}" 0
+
+run_test "Allow Bash cp into /var/folders/ (macOS temp)" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cp foo /var/folders/abc/T/payload.json"}}' 0
+
+run_test "Allow Bash cp into /var/log/myapp.log" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cp foo /var/log/myapp.log"}}' 0
+
+run_test "Allow Bash on file with .claude in middle of name" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cat ./repos/something.claude/file.py"}}' 0
+
+run_test "Allow Bash with .bashrc.bak (filename boundary, not real shell config)" "$HOOK" \
+  '{"tool_name":"Bash","tool_input":{"command":"cp foo .bashrc.bak"}}' 0
 
 # ===========================================================
 # block-environment-escape.sh
@@ -566,8 +624,8 @@ run_test "RT: Block sed -i on /etc/hosts" "$HOOK" \
 run_test "RT: Block chmod on /etc/ file" "$HOOK" \
   '{"tool_name":"Bash","tool_input":{"command":"chmod 644 /etc/important.conf"}}' 2
 
-run_test "RT: Block Write to expanded ~/.claude path" "$HOOK" \
-  '{"tool_name":"Write","tool_input":{"file_path":"/Users/dev/.claude/hooks/custom.sh"}}' 2
+run_test "RT: Block Write to expanded \$HOME/.claude path" "$HOOK" \
+  "{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$HOME/.claude/hooks/custom.sh\"}}" 2
 
 run_test "RT: Block cp to /usr/local/bin" "$HOOK" \
   '{"tool_name":"Bash","tool_input":{"command":"cp malware /usr/local/bin/innocent"}}' 2

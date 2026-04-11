@@ -13,14 +13,50 @@ HOOKS_DIR="$CLAUDE_HOME/hooks"
 GUARDRAILS_START="<!-- GUARDRAILS START — DO NOT EDIT THIS SECTION -->"
 GUARDRAILS_END="<!-- GUARDRAILS END -->"
 
+# --- Immutability helpers ---
+unlock_file() {
+  local f="$1"
+  if [ ! -f "$f" ]; then return; fi
+  if [[ "$OSTYPE" == darwin* ]]; then
+    chflags nouchg "$f" 2>/dev/null || true
+  elif command -v chattr &>/dev/null; then
+    chattr -i "$f" 2>/dev/null || true
+  fi
+}
+
+lock_file() {
+  local f="$1"
+  if [ ! -f "$f" ]; then return; fi
+  if [[ "$OSTYPE" == darwin* ]]; then
+    chflags uchg "$f" 2>/dev/null || true
+  elif command -v chattr &>/dev/null; then
+    sudo chattr +i "$f" 2>/dev/null || true
+  fi
+}
+
+unlock_guardrails() {
+  unlock_file "$CLAUDE_HOME/CLAUDE.md"
+  unlock_file "$CLAUDE_HOME/settings.json"
+  unlock_file "$CLAUDE_HOME/VERSION"
+  unlock_file "$CLAUDE_HOME/.opsentry-baseline.json"
+  if [ -d "$HOOKS_DIR" ]; then
+    for f in "$HOOKS_DIR"/block-*.sh; do
+      unlock_file "$f"
+    done
+  fi
+}
+
 echo ""
 echo "============================================"
 echo "  AI Guardrails Installer for Claude Code"
 echo "============================================"
 echo ""
 
+# Remove immutability flags before modifying files (needed for reinstalls)
+unlock_guardrails
+
 # --- Step 1: Create directories ---
-echo "[1/7] Creating directories..."
+echo "[1/9] Creating directories..."
 mkdir -p "$CLAUDE_HOME"
 mkdir -p "$HOOKS_DIR"
 mkdir -p "$CLAUDE_HOME/commands"
@@ -37,7 +73,7 @@ if [ -f "$REPO_ROOT/guardrails.yaml" ]; then
 fi
 
 # --- Step 2: Install VERSION ---
-echo "[2/7] Installing VERSION..."
+echo "[2/9] Installing VERSION..."
 if [ -f "$REPO_ROOT/VERSION" ]; then
   cp "$REPO_ROOT/VERSION" "$CLAUDE_HOME/VERSION"
   echo "       Installed: $CLAUDE_HOME/VERSION ($(cat "$REPO_ROOT/VERSION"))"
@@ -46,7 +82,7 @@ else
 fi
 
 # --- Step 3: Merge CLAUDE.md (preserve employee content outside markers) ---
-echo "[3/7] Merging CLAUDE.md..."
+echo "[3/9] Merging CLAUDE.md..."
 GUARDRAILS_CONTENT="$SCRIPT_DIR/claude/CLAUDE.md"
 
 if [ -f "$CLAUDE_HOME/CLAUDE.md" ]; then
@@ -96,7 +132,7 @@ else
 fi
 
 # --- Step 4: Merge settings.json (union deny rules, preserve custom permissions) ---
-echo "[4/7] Merging settings.json..."
+echo "[4/9] Merging settings.json..."
 
 GUARDRAILS_SETTINGS="$SCRIPT_DIR/claude/settings.json"
 
@@ -143,7 +179,7 @@ else
 fi
 
 # --- Step 5: Install hook scripts ---
-echo "[5/7] Installing hook scripts..."
+echo "[5/9] Installing hook scripts..."
 HOOK_SCRIPTS=(
   block-sensitive-files.sh
   block-dangerous-commands.sh
@@ -161,7 +197,7 @@ done
 echo "       Installed ${#HOOK_SCRIPTS[@]} hook scripts to: $HOOKS_DIR/"
 
 # --- Step 6: Register hooks in settings.json (append, don't replace) ---
-echo "[6/7] Registering hooks in settings.json..."
+echo "[6/9] Registering hooks in settings.json..."
 
 python3 -c "
 import json
@@ -242,16 +278,47 @@ print('       Hooks registered (employee custom hooks preserved).')
 "
 
 # --- Step 7: Install slash commands ---
-echo "[7/7] Installing slash commands..."
+echo "[7/9] Installing slash commands..."
 cp "$SCRIPT_DIR/.claude/commands/security-audit.md" "$CLAUDE_HOME/commands/"
 cp "$SCRIPT_DIR/.claude/commands/code-health.md" "$CLAUDE_HOME/commands/"
 cp "$SCRIPT_DIR/.claude/commands/governance-check.md" "$CLAUDE_HOME/commands/"
 echo "       Installed 3 slash commands to: $CLAUDE_HOME/commands/"
 
+# --- Step 8: Write baseline integrity manifest ---
+# Computes SHA-256 over the guardrail-controlled subset of CLAUDE.md (between
+# markers) and settings.json (intersection of installed deny rules with source
+# deny rules + OpSentry hook entries identified by command path), so patrol.sh
+# can detect tampering after install. Must run while files are still unlocked.
+echo "[8/9] Writing baseline integrity manifest..."
+INSTALL_VERSION="unknown"
+if [ -f "$REPO_ROOT/VERSION" ]; then
+  INSTALL_VERSION=$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")
+fi
+unlock_file "$CLAUDE_HOME/.opsentry-baseline.json"
+if python3 "$SCRIPT_DIR/baseline.py" write \
+    --claude-home "$CLAUDE_HOME" \
+    --source-dir "$SCRIPT_DIR/claude" \
+    --version "$INSTALL_VERSION"; then
+  :
+else
+  echo "       WARNING: baseline manifest write failed -- patrol.sh integrity checks will be skipped"
+fi
+
 echo ""
 echo "============================================"
 echo "  Installation complete!"
 echo "============================================"
+# --- Step 9: Apply filesystem immutability ---
+echo "[9/9] Applying filesystem immutability..."
+lock_file "$CLAUDE_HOME/CLAUDE.md"
+lock_file "$CLAUDE_HOME/settings.json"
+lock_file "$CLAUDE_HOME/VERSION"
+lock_file "$CLAUDE_HOME/.opsentry-baseline.json"
+for hook in "${HOOK_SCRIPTS[@]}"; do
+  lock_file "$HOOKS_DIR/$hook"
+done
+echo "       Guardrail files locked (chflags uchg / chattr +i)"
+
 echo ""
 echo "  Installed files:"
 echo "    - $CLAUDE_HOME/VERSION"

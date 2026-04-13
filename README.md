@@ -1,13 +1,14 @@
 # OpSentry
 
-> Claude Code has full access to your file system and shell.
-> It can read your `.env` files, run `rm -rf`, execute
-> `git push --force`, and `curl` data to external servers.
-> OpSentry stops it — deterministically, not just advisorily.
+> Three layers of defense for AI coding agents —
+> **detect**, **prevent**, and **make dangerous actions
+> architecturally impossible**.
 
-The only guardrails framework built around Claude Code's
-native PreToolUse hook architecture. Three enforcement layers.
-Every tool call intercepted before execution.
+Competitors match patterns and lose the arms race.
+OpSentry makes entire attack classes impossible.
+
+Runtime guardrails. CI/CD composition analysis.
+OS-level sandbox profiles. From a single YAML config.
 
 Built by [Opsight Intelligence](https://opsightintel.com).
 
@@ -58,25 +59,29 @@ Restart Claude Code after install. That's it.
 
 ---
 
-## Three enforcement layers
+## Three layers of defense
 
-**Layer 1 — CLAUDE.md (behavioral)**
-18 security rules Claude Code reads at session start.
-Advisory — influences behavior but not enforced alone.
+**Layer 1 — Detect (Runtime Guardrails)**
+8 hook scripts + 18 behavioral rules + 70+ permission denials.
+Pre-execution pattern matching blocks known attack vectors
+before they run. 203 tests. Battle-tested against 8 red team attacks.
 
-**Layer 2 — settings.json (permission denials)**
-70+ hard deny rules at the platform level.
-Blocks file access and commands before hooks run.
-Cannot be overridden by the AI.
+**Layer 2 — Prevent (CI/CD Analysis)**
+Cross-file AST composition analysis at PR time.
+Import-graph-aware — catches exfiltration patterns assembled
+across multiple files. Auto-fix and merge gating.
 
-**Layer 3 — Hook scripts (deterministic)**
-8 bash scripts intercepting every tool call.
-Pattern-matched blocking with exit code 2.
-Context-aware — blocks base64 .env but allows base64 image.png
-Full incident logging to ~/.claude/opsentry-blocks.log
+**Layer 3 — Make Impossible (Sandbox Profiles)**
+Generated platform-specific sandbox configs that deny
+dangerous actions at the OS kernel level.
+macOS (sandbox-exec), Linux (bubblewrap), Docker.
 
-Even if the AI ignores advisory rules, layers 2 and 3 block
-prohibited actions.
+```bash
+opsentry sandbox generate --platform all
+```
+
+Each layer uses a different detection strategy. An attacker
+must defeat all three — not just one.
 
 ---
 
@@ -116,10 +121,9 @@ any personal customisations.
 
 ./test.sh
 
-168 automated tests (101 functional + 67 adversarial red-team)
-covering blocked and allowed cases for every hook, including
-project-local `.claude/` directories, `~/Library/` on macOS,
-`/var/folders/`, and symlink-based bypass attempts.
+203 automated tests: 168 hook tests (101 functional +
+67 adversarial red-team) plus 42 cross-file composition
+tests plus 23 network exposure tests.
 
 ---
 
@@ -167,8 +171,10 @@ Full deterministic enforcement requires Claude Code.
 | 70+ permission denials | ✓ | ✓ | ✓ |
 | 3 slash commands | ✓ | ✓ | ✓ |
 | Incident logging | ✓ | ✓ | ✓ |
-| 168 automated tests | ✓ | ✓ | ✓ |
+| 203 automated tests | ✓ | ✓ | ✓ |
 | CI/CD agents (GitHub Actions) | | ✓ | ✓ |
+| Cross-file exfiltration detection (AST) | | ✓ | ✓ |
+| **Sandbox profile generator** | | **✓** | **✓** |
 | LLM-powered code review (BYOK) | | ✓ | ✓ |
 | Auto-fix on PR | | ✓ | ✓ |
 | Vertical config packs | | ✓ | ✓ |

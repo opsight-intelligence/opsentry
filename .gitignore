@@ -3,3 +3,8 @@
 __pycache__/
 .env
 *.log
+
+# Strategy / planning — keep local only
+docs/gaps.md
+todo0420opsentrydemo.md
+*.pdf

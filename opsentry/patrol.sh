@@ -39,9 +39,25 @@ echo ""
 # PIPESTATUS[0] still captures verify.sh's actual exit code.
 echo "--- Standard Verification ---"
 set +e
-bash "$SCRIPT_DIR/verify.sh" 2>&1 | grep -E '(PASS|FAIL|WARN)' | head -30
-VERIFY_EXIT=${PIPESTATUS[0]}
+VERIFY_OUTPUT=$(bash "$SCRIPT_DIR/verify.sh" 2>&1)
+VERIFY_EXIT=$?
 set -e
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  case "$line" in
+    *"  PASS  "*|*"  FAIL  "*|*"  WARN  "*)
+      echo "$line"
+      case "$line" in
+        *"  PASS  "*) PASS=$((PASS + 1)) ;;
+        *"  WARN  "*) WARN=$((WARN + 1)) ;;
+        *"  FAIL  "*)
+          FAIL=$((FAIL + 1))
+          log_finding "high" "Verify check failed" "$(echo "$line" | tr -d '"\\')"
+          ;;
+      esac
+      ;;
+  esac
+done <<< "$VERIFY_OUTPUT"
 echo ""
 
 # --- 2. Persistence scan: unexpected scheduled tasks ---

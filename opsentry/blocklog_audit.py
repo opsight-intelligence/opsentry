@@ -206,9 +206,12 @@ def detect_repeat_offender(
     return findings
 
 
-def detect_rapid_burst(entries: list[LogEntry]) -> list[dict]:
-    """Sliding 30-second window with N+ blocks anywhere in the log."""
+def detect_rapid_burst(
+    entries: list[LogEntry], now: datetime.datetime, window_hours: int
+) -> list[dict]:
+    """Sliding 30-second window with N+ blocks in the recent window."""
     findings: list[dict] = []
+    entries = _within_window(entries, now, window_hours * 3600)
     if len(entries) < RAPID_BURST_WARN:
         findings.append(
             {
@@ -308,11 +311,14 @@ def detect_multi_hook_coverage(
     return findings
 
 
-def detect_exfil_cluster(entries: list[LogEntry]) -> list[dict]:
+def detect_exfil_cluster(
+    entries: list[LogEntry], now: datetime.datetime, window_hours: int
+) -> list[dict]:
     """sensitive-files + data-exfiltration within 5 minutes = exfil primitive."""
     findings: list[dict] = []
-    sensitive = [e for e in entries if "sensitive-files" in e.hook]
-    exfil = [e for e in entries if "data-exfiltration" in e.hook]
+    recent = _within_window(entries, now, window_hours * 3600)
+    sensitive = [e for e in recent if "sensitive-files" in e.hook]
+    exfil = [e for e in recent if "data-exfiltration" in e.hook]
 
     if not sensitive or not exfil:
         findings.append(
@@ -358,12 +364,15 @@ def detect_exfil_cluster(entries: list[LogEntry]) -> list[dict]:
     return findings
 
 
-def detect_self_mod_attempts(entries: list[LogEntry]) -> list[dict]:
+def detect_self_mod_attempts(
+    entries: list[LogEntry], now: datetime.datetime, window_hours: int
+) -> list[dict]:
     """block-scope-escape blocks tagged with Self-modification (Attack 3)."""
     findings: list[dict] = []
+    recent = _within_window(entries, now, window_hours * 3600)
     matches = [
         e
-        for e in entries
+        for e in recent
         if "scope-escape" in e.hook and "self-modification" in e.reason.lower()
     ]
     count = len(matches)
@@ -428,10 +437,10 @@ def analyze(
 
     findings: list[dict] = [detect_total_stats(entries, now, window_hours)]
     findings.extend(detect_repeat_offender(entries, now))
-    findings.extend(detect_rapid_burst(entries))
+    findings.extend(detect_rapid_burst(entries, now, window_hours))
     findings.extend(detect_multi_hook_coverage(entries, now))
-    findings.extend(detect_exfil_cluster(entries))
-    findings.extend(detect_self_mod_attempts(entries))
+    findings.extend(detect_exfil_cluster(entries, now, window_hours))
+    findings.extend(detect_self_mod_attempts(entries, now, window_hours))
 
     any_fail = any(f["status"] == "fail" for f in findings)
     return any_fail, findings

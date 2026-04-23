@@ -1,0 +1,850 @@
+
+--- FILE: block-dangerous-commands.sh ---
+#!/bin/bash
+# block-dangerous-commands.sh
+# PreToolUse hook — blocks destructive and dangerous bash commands
+# Exit code 2 = block the action, stderr message goes to Claude as feedback
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-dangerous-commands"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Only check Bash commands
+if [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+# Optional path prefix for matching commands invoked via full path
+# Matches: /usr/bin/cmd, /usr/local/bin/cmd, /bin/cmd, /sbin/cmd, etc.
+P='(/\S+/)?'
+
+# === DESTRUCTIVE FILE OPERATIONS ===
+if echo "$COMMAND" | grep -qE "${P}rm\s+(-[a-zA-Z]*r[a-zA-Z]*f|--recursive|--force|-[a-zA-Z]*f[a-zA-Z]*r)"; then
+  log_block "rm -rf or forced recursive deletion" "$COMMAND"
+  echo "BLOCKED: rm -rf is not allowed. If you need to delete files, ask the developer to do it manually." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "^\s*${P}rm\s+-r\s"; then
+  log_block "Recursive deletion (rm -r)" "$COMMAND"
+  echo "BLOCKED: Recursive deletion (rm -r) is not allowed. Ask the developer to handle file deletion manually." >&2
+  exit 2
+fi
+
+# === SUDO ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}sudo\s"; then
+  log_block "sudo command" "$COMMAND"
+  echo "BLOCKED: sudo commands are not allowed. You should never need root access." >&2
+  exit 2
+fi
+
+# === DANGEROUS PERMISSIONS ===
+if echo "$COMMAND" | grep -qE "${P}chmod\s+777"; then
+  log_block "chmod 777" "$COMMAND"
+  echo "BLOCKED: chmod 777 is not allowed. Use specific permissions like 644 or 755 instead." >&2
+  exit 2
+fi
+
+# === DISK OPERATIONS ===
+if echo "$COMMAND" | grep -qE "(^|\s|;)${P}(mkfs|fdisk|dd)\s"; then
+  log_block "Disk-level operation (mkfs/fdisk/dd)" "$COMMAND"
+  echo "BLOCKED: Disk-level operations (mkfs, fdisk, dd) are not allowed." >&2
+  exit 2
+fi
+
+# === KILL SYSTEM PROCESSES ===
+if echo "$COMMAND" | grep -qE "${P}kill\s+-(9|SIGKILL)"; then
+  log_block "kill -9" "$COMMAND"
+  echo "BLOCKED: kill -9 is not allowed. Use graceful shutdown methods." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE '(systemctl|service)\s+(stop|restart|disable)'; then
+  log_block "systemctl/service stop/restart/disable" "$COMMAND"
+  echo "BLOCKED: Stopping or restarting system services is not allowed." >&2
+  exit 2
+fi
+
+# === PIPE TO SHELL (REMOTE CODE EXECUTION) ===
+if echo "$COMMAND" | grep -qE "(${P}curl|${P}wget)\s.*\|[ \t]*(sh|bash|zsh|source)"; then
+  log_block "Pipe to shell (curl/wget | sh/bash)" "$COMMAND"
+  echo "BLOCKED: Downloading and piping to shell is not allowed. Download the script first, review it, then run it." >&2
+  exit 2
+fi
+
+# === DATABASE DESTRUCTIVE COMMANDS ===
+if echo "$COMMAND" | grep -qiE '(DROP\s+TABLE|DROP\s+DATABASE|TRUNCATE\s+TABLE)'; then
+  log_block "DROP TABLE/DATABASE or TRUNCATE" "$COMMAND"
+  echo "BLOCKED: DROP TABLE, DROP DATABASE, and TRUNCATE TABLE are not allowed via the agent." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qiE 'DELETE\s+FROM\s+\w+\s*;' ; then
+  log_block "DELETE FROM without WHERE clause" "$COMMAND"
+  echo "BLOCKED: DELETE FROM without a WHERE clause is not allowed. Always specify a WHERE condition." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qiE 'UPDATE\s+\w+\s+SET\s' && ! echo "$COMMAND" | grep -qiE 'WHERE'; then
+  log_block "UPDATE without WHERE clause" "$COMMAND"
+  echo "BLOCKED: UPDATE without a WHERE clause is not allowed." >&2
+  exit 2
+fi
+
+exit 0
+
+--- FILE: block-data-exfiltration.sh ---
+#!/bin/bash
+# block-data-exfiltration.sh
+# PreToolUse hook that blocks data exfiltration attempts via curl/wget POST with file refs,
+# base64 encoding of sensitive files, writes to world-readable locations, clipboard
+# exfiltration of sensitive data, and netcat outbound data channels.
+# Exit code 2 = block the action, stderr message goes to Claude as feedback.
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-data-exfiltration"
+
+SENSITIVE_PATTERNS='\.env|credentials|secret|token|\.pem|\.key|\.crt|\.p12|\.pfx|\.keystore|\.jks|\.ssh|\.aws|\.azure|\.gcloud|snowflake\.config|profiles\.yml|connections\.toml'
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Only check Bash commands
+if [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+# Optional path prefix for matching commands invoked via full path
+P='(/\S+/)?'
+
+# === CURL/WGET POST WITH FILE REFERENCES ===
+# Catches both spaced (-d @file) and unspaced (-d@file) variants
+if echo "$COMMAND" | grep -qE "${P}curl\s.*(-d\s*@|-F\s*\S*=@|--data\s*@|--data-binary\s*@|--data-urlencode\s*@)"; then
+  log_block "curl POST with file reference" "$COMMAND"
+  echo "BLOCKED: curl with file upload (@file) is not allowed. This could exfiltrate local files to an external server." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "${P}wget\s.*--post-file"; then
+  log_block "wget --post-file" "$COMMAND"
+  echo "BLOCKED: wget --post-file is not allowed. This could exfiltrate local files to an external server." >&2
+  exit 2
+fi
+
+# === BASE64 ENCODING OF SENSITIVE FILES ===
+if echo "$COMMAND" | grep -qE "${P}base64\s.*(${SENSITIVE_PATTERNS})"; then
+  log_block "base64 encoding of sensitive file" "$COMMAND"
+  echo "BLOCKED: base64 encoding of sensitive files is not allowed. This is a common data exfiltration technique." >&2
+  exit 2
+fi
+
+# Catches both "cat .env | base64" and "cat .env|base64" (no space before pipe)
+if echo "$COMMAND" | grep -qE "cat\s.*(${SENSITIVE_PATTERNS}).*\|[ \t]*${P}(base64|openssl\s+enc|xxd)"; then
+  log_block "cat sensitive file piped to encoder" "$COMMAND"
+  echo "BLOCKED: Piping sensitive files through encoding tools is not allowed. This is a common data exfiltration technique." >&2
+  exit 2
+fi
+
+# === WRITES TO WORLD-READABLE OR TEMP LOCATIONS ===
+if echo "$COMMAND" | grep -qE '(cp|mv|tee|cat\s.*>)\s.*(\/tmp\/|\/var\/tmp\/|\/dev\/shm\/)'; then
+  log_block "Write to world-readable temp location" "$COMMAND"
+  echo "BLOCKED: Writing files to /tmp/, /var/tmp/, or /dev/shm/ is not allowed. These locations are world-readable and pose a data exfiltration risk." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE '>{1,2}\s*(\/tmp\/|\/var\/tmp\/|\/dev\/shm\/)'; then
+  log_block "Redirect to world-readable temp location" "$COMMAND"
+  echo "BLOCKED: Redirecting output to /tmp/, /var/tmp/, or /dev/shm/ is not allowed. These locations are world-readable and pose a data exfiltration risk." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE 'chmod\s+777'; then
+  log_block "chmod 777 (world-readable permissions)" "$COMMAND"
+  echo "BLOCKED: chmod 777 is not allowed. Setting world-readable/writable/executable permissions is a security risk." >&2
+  exit 2
+fi
+
+# === CLIPBOARD EXFILTRATION OF SENSITIVE DATA ===
+if echo "$COMMAND" | grep -qE '(pbcopy|xclip|xsel|wl-copy)'; then
+  if echo "$COMMAND" | grep -qE "(${SENSITIVE_PATTERNS})"; then
+    log_block "Clipboard exfiltration of sensitive data" "$COMMAND"
+    echo "BLOCKED: Copying sensitive file contents to the clipboard is not allowed." >&2
+    exit 2
+  fi
+fi
+
+# === NC/NETCAT OUTBOUND DATA CHANNELS ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}(nc|netcat|ncat|socat)\s"; then
+  log_block "netcat/socat outbound data channel" "$COMMAND"
+  echo "BLOCKED: nc/netcat/ncat/socat commands are not allowed. These can be used to exfiltrate data over the network." >&2
+  exit 2
+fi
+
+exit 0
+
+--- FILE: block-environment-escape.sh ---
+#!/bin/bash
+# block-environment-escape.sh
+# PreToolUse hook that blocks commands which could escape the local development environment.
+# It prevents SSH/SCP to remote hosts, dangerous Docker operations, production env var access,
+# destructive Terraform commands, and destructive kubectl operations.
+# Exit code 2 = block the action, stderr message goes to Claude as feedback.
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-environment-escape"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Only check Bash commands
+if [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+# Optional path prefix for matching commands invoked via full path
+P='(/\S+/)?'
+
+# === SSH / SCP TO REMOTE HOSTS ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}(ssh|scp)\s"; then
+  log_block "SSH/SCP to remote host" "$COMMAND"
+  echo "BLOCKED: SSH and SCP commands are not allowed. They can be used to access remote hosts outside the local environment." >&2
+  exit 2
+fi
+
+# === RSYNC WITH REMOTE TARGETS (contains user@host: or host: pattern) ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}rsync\s"; then
+  if echo "$COMMAND" | grep -qE '[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:|[a-zA-Z0-9._-]+:'; then
+    log_block "rsync to remote target" "$COMMAND"
+    echo "BLOCKED: rsync with remote targets is not allowed. Local rsync (without host: patterns) is permitted." >&2
+    exit 2
+  fi
+fi
+
+# === DOCKER ESCAPE OPERATIONS ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}docker\s+(run|exec|cp|build)\s"; then
+  log_block "Docker escape operation" "$COMMAND"
+  echo "BLOCKED: docker run, exec, cp, and build are not allowed. They could escape sandboxing. Read-only commands (ps, logs, images) are permitted." >&2
+  exit 2
+fi
+
+# === PRODUCTION ENVIRONMENT VARIABLE ACCESS ===
+if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)(echo|printf)\s+.*\$\{?PROD(UCTION)?_'; then
+  log_block "Production env var access" "$COMMAND"
+  echo "BLOCKED: Reading production environment variables (PROD_*, PRODUCTION_*) is not allowed." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)printenv\s+PROD(UCTION)?_'; then
+  log_block "Production env var access via printenv" "$COMMAND"
+  echo "BLOCKED: Reading production environment variables (PROD_*, PRODUCTION_*) is not allowed." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE 'env\s*\|\s*grep\s+.*PROD(UCTION)?_'; then
+  log_block "Production env var access via env grep" "$COMMAND"
+  echo "BLOCKED: Grepping for production environment variables (PROD_*, PRODUCTION_*) is not allowed." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)export\s+PROD(UCTION)?_'; then
+  log_block "Production env var export" "$COMMAND"
+  echo "BLOCKED: Exporting production environment variables (PROD_*, PRODUCTION_*) is not allowed." >&2
+  exit 2
+fi
+
+# === TERRAFORM DESTRUCTIVE COMMANDS ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}terraform\s+(apply|destroy|import)\s*"; then
+  log_block "Terraform destructive command" "$COMMAND"
+  echo "BLOCKED: terraform apply, destroy, and import are not allowed. Use terraform plan, fmt, or validate instead." >&2
+  exit 2
+fi
+
+# === KUBECTL DESTRUCTIVE OPERATIONS ===
+if echo "$COMMAND" | grep -qE "(^|\s|;|&&|\|\|)${P}kubectl\s+(delete|exec|apply)\s"; then
+  log_block "kubectl destructive operation" "$COMMAND"
+  echo "BLOCKED: kubectl delete, exec, and apply are not allowed. Read-only commands (get, describe, logs) are permitted." >&2
+  exit 2
+fi
+
+exit 0
+
+--- FILE: block-git-commands.sh ---
+#!/bin/bash
+# block-git-commands.sh
+# PreToolUse hook — blocks Claude Code from executing any git commands
+# Exit code 2 = block the action, stderr message goes to Claude as feedback
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-git-commands"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Only check Bash commands
+if [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+# Block any command that starts with git or contains git as a chained command
+# Also catches full-path invocations like /usr/bin/git
+if echo "$COMMAND" | grep -qE '(^|\s|;|&&|\|\|)(/\S+/)?git\s'; then
+  log_block "Git command detected" "$COMMAND"
+  echo "BLOCKED: Git commands are not allowed. Write the git command as text for the developer to review and run manually." >&2
+  exit 2
+fi
+
+exit 0
+
+--- FILE: block-package-install.sh ---
+#!/bin/bash
+# block-package-install.sh
+# PreToolUse hook that blocks package installations from untrusted or arbitrary sources.
+# It detects pip, npm, gem, and go installs from custom registries, git URLs, and direct URLs.
+# Curl/wget piped to package managers is also blocked.
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-package-install"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Only check Bash commands
+if [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+# Optional path prefix for matching commands invoked via full path
+P='(/\S+/)?'
+
+# === PIP INSTALL FROM ARBITRARY SOURCES ===
+# Catches: pip install -i url, pip install --index-url url, pip install --index-url=url
+# Also catches: python -m pip install, python3 -m pip install
+if echo "$COMMAND" | grep -qE "(${P}pip[3]?|(python|python3)\s+-m\s+pip)\s+install\s.*(-i[ =]|--index-url[ =]|--extra-index-url[ =])"; then
+  log_block "pip install with custom index URL" "$COMMAND"
+  echo "BLOCKED: pip install with --index-url or -i pointing to a custom registry is not allowed. Use the default PyPI registry." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "(${P}pip[3]?|(python|python3)\s+-m\s+pip)\s+install\s.*git\+"; then
+  log_block "pip install from git URL" "$COMMAND"
+  echo "BLOCKED: pip install from a git URL is not allowed. Only install packages from PyPI." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "(${P}pip[3]?|(python|python3)\s+-m\s+pip)\s+install\s.*https?://"; then
+  log_block "pip install from direct URL" "$COMMAND"
+  echo "BLOCKED: pip install from a direct URL is not allowed. Only install packages from PyPI." >&2
+  exit 2
+fi
+
+# === NPM INSTALL FROM ARBITRARY SOURCES ===
+# Catches both --registry url and --registry=url
+if echo "$COMMAND" | grep -qE "${P}npm\s+install\s.*--registry[ =]"; then
+  log_block "npm install with custom registry" "$COMMAND"
+  echo "BLOCKED: npm install with --registry pointing to a custom registry is not allowed. Use the default npm registry." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "${P}npm\s+install\s.*git(\+https?|\+ssh|://)"; then
+  log_block "npm install from git URL" "$COMMAND"
+  echo "BLOCKED: npm install from a git URL is not allowed. Only install packages from the npm registry." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "${P}npm\s+install\s.*https?://"; then
+  log_block "npm install from tarball URL" "$COMMAND"
+  echo "BLOCKED: npm install from a direct URL is not allowed. Only install packages from the npm registry." >&2
+  exit 2
+fi
+
+if echo "$COMMAND" | grep -qE "${P}npm\s+install\s+[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+"; then
+  log_block "npm install from GitHub shorthand" "$COMMAND"
+  echo "BLOCKED: npm install from GitHub shorthand (user/repo) is not allowed. Only install packages from the npm registry." >&2
+  exit 2
+fi
+
+# === GEM INSTALL FROM ARBITRARY SOURCES ===
+# Catches both --source url and --source=url
+if echo "$COMMAND" | grep -qE "${P}gem\s+install\s.*--source[ =]"; then
+  log_block "gem install with custom source" "$COMMAND"
+  echo "BLOCKED: gem install with --source pointing to a custom registry is not allowed. Use the default RubyGems registry." >&2
+  exit 2
+fi
+
+# === GO INSTALL FROM ARBITRARY SOURCES ===
+if echo "$COMMAND" | grep -qE "${P}go\s+install\s+https?://"; then
+  log_block "go install from URL" "$COMMAND"
+  echo "BLOCKED: go install from a direct URL is not allowed. Use standard Go module paths." >&2
+  exit 2
+fi
+
+# === CURL/WGET PIPED TO PACKAGE MANAGERS ===
+# Catches both "curl url | pip" and "curl url|pip" (no space)
+if echo "$COMMAND" | grep -qE "(${P}curl|${P}wget)\s.*\|[ \t]*(pip[3]?|npm|gem|go)\s"; then
+  log_block "curl/wget piped to package manager" "$COMMAND"
+  echo "BLOCKED: Piping curl/wget output to a package manager is not allowed. Download files first, review them, then install." >&2
+  exit 2
+fi
+
+exit 0
+
+--- FILE: block-pii-leakage.sh ---
+#!/bin/bash
+# block-pii-leakage.sh
+# PreToolUse hook -- blocks Claude Code from writing PII patterns into source files.
+# Checks Write and Edit tool inputs for SSNs, credit card numbers, and similar patterns.
+# Exit code 2 = block the action, stderr message goes to Claude as feedback.
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-pii-leakage"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Only check Write, Edit, and Bash tools
+if [ "$TOOL_NAME" != "Write" ] && [ "$TOOL_NAME" != "Edit" ] && [ "$TOOL_NAME" != "Bash" ]; then
+  exit 0
+fi
+
+# Extract the content to scan based on tool type
+CONTENT=""
+if [ "$TOOL_NAME" = "Write" ]; then
+  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+elif [ "$TOOL_NAME" = "Edit" ]; then
+  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
+elif [ "$TOOL_NAME" = "Bash" ]; then
+  CONTENT=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+fi
+
+if [ -z "$CONTENT" ]; then
+  exit 0
+fi
+
+# ============================================================
+# Default PII patterns (US locale)
+# To add locale-specific patterns, append sections below.
+# ============================================================
+
+# --- US Social Security Number (XXX-XX-XXXX or XXX XX XXXX) ---
+# Requires at least dashes or spaces as separators to avoid false positives on 9-digit numbers
+SSN_MATCH=$(echo "$CONTENT" | grep -oE '\b[0-9]{3}[- ][0-9]{2}[- ][0-9]{4}\b' | head -1 || true)
+if [ -n "$SSN_MATCH" ]; then
+  # Allow well-known synthetic test SSNs
+  IS_SYNTHETIC=$(echo "$SSN_MATCH" | grep -cE '^(000-00-0000|555-55-5555|000 00 0000|555 55 5555)$' || true)
+  if [ "$IS_SYNTHETIC" -eq 0 ]; then
+    log_block "US SSN pattern detected" "$SSN_MATCH"
+    echo "BLOCKED: Content contains a pattern matching a US Social Security Number ($SSN_MATCH). Use synthetic test data like 000-00-0000 or 555-55-5555 instead. Never include real PII in source code." >&2
+    exit 2
+  fi
+fi
+
+# --- Credit Card Numbers (Visa, Mastercard, Amex, Discover) ---
+# Catches: 4111-1111-1111-1111, 4111 1111 1111 1111, and 4111111111111111
+CC_MATCH=$(echo "$CONTENT" | grep -oE '\b(4[0-9]{3}|5[1-5][0-9]{2}|6(011|5[0-9]{2}))[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{1,4}\b' | head -1 || true)
+if [ -z "$CC_MATCH" ]; then
+  # Try Amex pattern separately: 3[47]XX-XXXXXX-XXXXX or 3[47]XXXXXXXXXXXXX
+  CC_MATCH=$(echo "$CONTENT" | grep -oE '\b3[47][0-9]{2}[- ]?[0-9]{6}[- ]?[0-9]{5}\b' | head -1 || true)
+fi
+if [ -n "$CC_MATCH" ]; then
+  log_block "Credit card number pattern detected" "$CC_MATCH"
+  echo "BLOCKED: Content contains a pattern matching a credit card number. Use synthetic test data like 4111-1111-1111-1111 instead. Never include real PII in source code." >&2
+  exit 2
+fi
+
+# ============================================================
+# Optional locale: KR (Korean Resident Registration Number)
+# Remove or comment this section if not needed.
+# ============================================================
+
+# --- Korean Resident Registration Number (YYMMDD-NNNNNNN) ---
+RRN_MATCH=$(echo "$CONTENT" | grep -oE '\b[0-9]{6}-[0-9]{7}\b' | head -1 || true)
+if [ -n "$RRN_MATCH" ]; then
+  log_block "Korean RRN pattern detected" "$RRN_MATCH"
+  echo "BLOCKED: Content contains a pattern matching a Korean Resident Registration Number ($RRN_MATCH). Use synthetic test data instead. Never include real PII in source code." >&2
+  exit 2
+fi
+
+exit 0
+
+--- FILE: block-scope-escape.sh ---
+#!/bin/bash
+# block-scope-escape.sh -- PreToolUse hook that prevents the agent from modifying
+# its own guardrails in ~/.claude/ and from writing to dangerous system locations.
+# Exit code 2 = block the action, stderr message goes to Claude as feedback.
+#
+# Path checks use word-boundary anchoring (whitespace, quote, =, backtick, or
+# start-of-line) so that legitimate paths containing system-path substrings
+# are NOT blocked. Specifically:
+#   - project-local .claude/ directories (e.g., ~/Desktop/repos/x/.claude/)
+#     are allowed; only $HOME/.claude/ is the protected install target
+#   - ~/Library/ on macOS is allowed (only system /Library/ is blocked)
+#   - /var/folders/ (macOS per-user temp) and /var/log/ are allowed
+# File paths on Read/Write/Edit are resolved via realpath (with fallback)
+# so symlinks pointing into $HOME/.claude/ are still caught.
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-scope-escape"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+# ---------------------------------------------------------------------------
+# Path resolution helpers
+# ---------------------------------------------------------------------------
+
+# Expand a leading ~/ to $HOME, then run realpath if available.
+# For non-existent paths (e.g., Write to a new file), resolve the parent
+# directory and re-attach the basename. Falls back to the unresolved path
+# when realpath is not installed (best-effort symlink resolution).
+resolve_path() {
+  local p="$1"
+  # Expand a leading ~/ via substring offset (avoid `${p#~/}` because bash
+  # applies tilde expansion to the ~ inside the pattern, which silently
+  # produces ~/foo -> $HOME/~/foo instead of $HOME/foo).
+  case "$p" in
+    "~") p="$HOME" ;;
+    "~/"*) p="$HOME/${p:2}" ;;
+  esac
+
+  if [ -e "$p" ]; then
+    if command -v realpath >/dev/null 2>&1; then
+      realpath "$p" 2>/dev/null || echo "$p"
+    else
+      echo "$p"
+    fi
+    return
+  fi
+
+  # Path doesn't exist yet (e.g., Write to a new file). Resolve the parent
+  # so a symlinked parent dir is still caught.
+  local parent base resolved_parent
+  parent=$(dirname "$p")
+  base=$(basename "$p")
+  if [ -e "$parent" ] && command -v realpath >/dev/null 2>&1; then
+    resolved_parent=$(realpath "$parent" 2>/dev/null || echo "$parent")
+    echo "$resolved_parent/$base"
+  else
+    echo "$p"
+  fi
+}
+
+# Return 0 (success) iff the resolved absolute path is $HOME/.claude or
+# any descendant. Compares against BOTH the unresolved $HOME and the
+# realpath-resolved $HOME so the macOS /var -> /private/var symlink (which
+# affects tempdirs and any path-resolved file_path) does not cause a miss.
+is_under_home_claude() {
+  local resolved="$1"
+  local home_claude="$HOME/.claude"
+  local resolved_home_claude="$home_claude"
+  if command -v realpath >/dev/null 2>&1; then
+    local resolved_home
+    resolved_home=$(realpath "$HOME" 2>/dev/null || echo "$HOME")
+    resolved_home_claude="$resolved_home/.claude"
+  fi
+  case "$resolved" in
+    "$home_claude") return 0 ;;
+    "$home_claude"/*) return 0 ;;
+    "$resolved_home_claude") return 0 ;;
+    "$resolved_home_claude"/*) return 0 ;;
+  esac
+  return 1
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# ---------------------------------------------------------------------------
+# A. Self-modification prevention -- Read, Write, Edit
+# ---------------------------------------------------------------------------
+
+if [ "$TOOL_NAME" = "Read" ] || [ "$TOOL_NAME" = "Write" ] || [ "$TOOL_NAME" = "Edit" ]; then
+  FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+
+  if [ -n "$FILE_PATH" ]; then
+    RESOLVED=$(resolve_path "$FILE_PATH")
+    if is_under_home_claude "$RESOLVED"; then
+      log_block "Self-modification via $TOOL_NAME" "$FILE_PATH"
+      echo "BLOCKED: Access to '$FILE_PATH' (resolves to '$RESOLVED') is denied. Modifying files in ~/.claude/ is forbidden -- this directory contains security guardrails that must not be read or altered by the agent." >&2
+      exit 2
+    fi
+  fi
+
+  # File-based tools have no additional scope-boundary check; allow.
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# B. Bash branch
+# ---------------------------------------------------------------------------
+
+if [ "$TOOL_NAME" = "Bash" ]; then
+  COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+  # Boundary character class: start-of-line, whitespace, =, backtick, single
+  # or double quote. Used to anchor system path matches so substring matches
+  # against /Library/ inside ~/Library/ don't fire.
+  # In double-quoted bash strings: \` for backtick, \" for dquote, \$ for $.
+  BOUNDARY="(^|[[:space:]=\`\"'])"
+  END_BOUNDARY="(/|\$|[[:space:]\"'])"
+
+  # --- B1. Self-modification: ~/.claude/ in any form ---
+
+  # Literal forms (uniquely identifiable, fixed-string match is safe):
+  CLAUDE_LITERAL_FORMS=(
+    '~/.claude'
+    '$HOME/.claude'
+    '${HOME}/.claude'
+  )
+  for form in "${CLAUDE_LITERAL_FORMS[@]}"; do
+    if echo "$COMMAND" | grep -qF "$form"; then
+      log_block "Self-modification via Bash (literal $form)" "$COMMAND"
+      echo "BLOCKED: Command references $form. Modifying guardrail files is forbidden -- this directory contains security guardrails that must not be altered by the agent." >&2
+      exit 2
+    fi
+  done
+
+  # Expanded HOME path (e.g., /Users/utku/.claude/...). Anchor to a path-arg
+  # boundary so /Users/utku/Desktop/repos/x/.claude/ does NOT match.
+  # Escape the dot in $HOME for regex (other regex specials are extremely
+  # rare in usernames; we accept that residual).
+  HOME_RE="${HOME//./\\.}"
+  EXPANDED_CLAUDE_REGEX="${BOUNDARY}${HOME_RE}/\\.claude${END_BOUNDARY}"
+  if echo "$COMMAND" | grep -qE "$EXPANDED_CLAUDE_REGEX"; then
+    log_block "Self-modification via Bash (expanded HOME path)" "$COMMAND"
+    echo "BLOCKED: Command references the expanded \$HOME/.claude/ path. Modifying guardrail files is forbidden -- this directory contains security guardrails that must not be altered by the agent." >&2
+    exit 2
+  fi
+
+  # --- B2. Scope boundary enforcement: writes to system locations ---
+  # Only trigger when the command actually writes (>, >>, cp, mv, tee, install,
+  # rsync, dd, chmod, sed -i).
+  WRITE_INDICATORS='(>|>>|(^|[[:space:]])(cp|mv|tee|install|rsync|dd|chmod)[[:space:]]|sed[[:space:]]+-[a-zA-Z]*i)'
+
+  if echo "$COMMAND" | grep -qE "$WRITE_INDICATORS"; then
+    # System paths anchored at path-arg boundary. ~/Library/ is NOT matched
+    # because the boundary requires whitespace/quote/start before /Library/.
+    SYS_REGEX="${BOUNDARY}/(etc|usr|opt|System|Library)${END_BOUNDARY}"
+    if echo "$COMMAND" | grep -qE "$SYS_REGEX"; then
+      MATCH=$(echo "$COMMAND" | grep -oE '/(etc|usr|opt|System|Library)/' | head -1 || true)
+      log_block "Write to system path: $MATCH" "$COMMAND"
+      echo "BLOCKED: Command attempts to write to '$MATCH' (system path). Writing to system directories is forbidden. Limit file operations to your project directory or your home directory." >&2
+      exit 2
+    fi
+
+    # /var/ — block by default, exempt /var/log/ (logging) and /var/folders/
+    # (macOS per-user temp dir, where mktemp puts things). /var/tmp/ remains
+    # blocked per CLAUDE.md rule 12 (data exfiltration prevention).
+    VAR_REGEX="${BOUNDARY}/var/"
+    if echo "$COMMAND" | grep -qE "$VAR_REGEX"; then
+      # Pull every /var/<segment> reference out of the command and check
+      # whether at least one is NOT in the allow list. Allow segments:
+      # log, folders. Anything else (cache, tmp, lib, www, ...) is blocked.
+      VAR_BAD=""
+      while IFS= read -r seg; do
+        case "$seg" in
+          /var/log|/var/log/*) ;;
+          /var/folders|/var/folders/*) ;;
+          *) VAR_BAD="$seg"; break ;;
+        esac
+      done < <(echo "$COMMAND" | grep -oE '/var/[a-zA-Z0-9_.-]+' || true)
+      if [ -n "$VAR_BAD" ]; then
+        log_block "Write to /var/ system path: $VAR_BAD" "$COMMAND"
+        echo "BLOCKED: Command attempts to write to '$VAR_BAD'. Writing to /var/ is forbidden except /var/log/ (logging) and /var/folders/ (macOS temp). Limit file operations to your project directory." >&2
+        exit 2
+      fi
+    fi
+
+    # Shell config files. Match the filename at a boundary so foo.bashrc.bak
+    # doesn't false-positive on ".bashrc" substring.
+    SHELL_CONFIG_REGEX="(^|[[:space:]=\`\"'/])\\.(bashrc|zshrc|bash_profile|zprofile|profile)(\$|[[:space:]\"'])"
+    if echo "$COMMAND" | grep -qE "$SHELL_CONFIG_REGEX"; then
+      MATCH=$(echo "$COMMAND" | grep -oE '\.(bashrc|zshrc|bash_profile|zprofile|profile)' | head -1 || true)
+      log_block "Write to shell config: $MATCH" "$COMMAND"
+      echo "BLOCKED: Command attempts to modify shell config file '$MATCH'. Modifying shell configuration is forbidden. Ask the developer to make shell changes manually." >&2
+      exit 2
+    fi
+  fi
+
+  exit 0
+fi
+
+# Unknown tool -- allow by default
+exit 0
+
+--- FILE: block-sensitive-files.sh ---
+#!/bin/bash
+# block-sensitive-files.sh
+# PreToolUse hook — blocks Claude Code from reading sensitive files
+# Exit code 2 = block the action, stderr message goes to Claude as feedback
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.claude/guardrail-blocks.log"
+HOOK_NAME="block-sensitive-files"
+
+log_block() {
+  local reason="$1"
+  local detail="$2"
+  local timestamp
+  timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  echo "{\"timestamp\":\"$timestamp\",\"hook\":\"$HOOK_NAME\",\"reason\":\"$reason\",\"detail\":\"$detail\",\"user\":\"$(whoami)\"}" >> "$LOG_FILE"
+}
+
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+
+# Get the file path depending on the tool
+FILE_PATH=""
+if [ "$TOOL_NAME" = "Read" ]; then
+  FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""')
+elif [ "$TOOL_NAME" = "Bash" ]; then
+  COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+  # Check if bash command references sensitive files
+  SENSITIVE_PATTERNS=(
+    '\.env'
+    'credentials\.'
+    'secret'
+    'token'
+    '\.pem'
+    '\.key$'
+    '\.crt$'
+    '\.p12'
+    '\.pfx'
+    '\.keystore'
+    '\.jks'
+    '\.ssh/'
+    '\.aws/'
+    '\.azure/'
+    '\.gcloud/'
+    'snowflake\.config'
+    'profiles\.yml'
+    'connections\.toml'
+  )
+  for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+    if echo "$COMMAND" | grep -qiE "$pattern"; then
+      log_block "Matched pattern: $pattern" "$COMMAND"
+      echo "BLOCKED: Command references a sensitive file pattern ($pattern). Do not access credential files, .env files, or secret files. Ask the developer to provide the specific values you need." >&2
+      exit 2
+    fi
+  done
+  exit 0
+fi
+
+# For Read tool — check against blocked patterns
+if [ -n "$FILE_PATH" ]; then
+  BLOCKED_PATTERNS=(
+    '\.env$'
+    '\.env\.'
+    'credentials\.json'
+    'credentials\.yaml'
+    'credentials\.toml'
+    'secret'
+    'token'
+    '\.pem$'
+    '\.key$'
+    '\.crt$'
+    '\.p12$'
+    '\.pfx$'
+    '\.keystore$'
+    '\.jks$'
+    '/\.ssh/'
+    '/\.aws/'
+    '/\.azure/'
+    '/\.gcloud/'
+    'snowflake\.config'
+    'profiles\.yml'
+    'connections\.toml'
+    '/secrets/'
+    '/credentials/'
+    '/private/'
+    '/keys/'
+  )
+  for pattern in "${BLOCKED_PATTERNS[@]}"; do
+    if echo "$FILE_PATH" | grep -qiE "$pattern"; then
+      log_block "Matched pattern: $pattern" "$FILE_PATH"
+      echo "BLOCKED: Access to '$FILE_PATH' is denied by company security policy. This file matches a protected pattern ($pattern). Ask the developer to provide the specific non-sensitive values you need." >&2
+      exit 2
+    fi
+  done
+fi
+
+exit 0

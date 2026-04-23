@@ -1,0 +1,230 @@
+
+============================================
+  AI Guardrails Hook Tests
+============================================
+
+--- block-sensitive-files.sh (BLOCKED) ---
+  PASS  Block .env read
+  PASS  Block .env.production read
+  PASS  Block credentials.json read
+  PASS  Block .pem file in keys dir
+  PASS  Block secrets directory
+  PASS  Block bash cat .env
+  PASS  Block bash head snowflake.config
+
+--- block-sensitive-files.sh (ALLOWED) ---
+  PASS  Allow normal Python file
+  PASS  Allow README.md
+  PASS  Allow bash ls src/
+
+--- block-dangerous-commands.sh (BLOCKED) ---
+  PASS  Block rm -rf /
+  PASS  Block rm -rf .
+  PASS  Block sudo apt install
+  PASS  Block chmod 777
+  PASS  Block curl pipe to bash
+  PASS  Block DROP TABLE
+  PASS  Block kill -9
+
+--- block-dangerous-commands.sh (ALLOWED) ---
+  PASS  Allow npm run test
+  PASS  Allow python app.py
+  PASS  Allow ls -la
+  PASS  Ignore non-Bash tool
+
+--- block-git-commands.sh (BLOCKED) ---
+  PASS  Block git push
+  PASS  Block git commit
+  PASS  Block git reset --hard
+
+--- block-git-commands.sh (ALLOWED) ---
+  PASS  Allow npm run test
+  PASS  Allow reading file with git in name
+
+--- block-data-exfiltration.sh (BLOCKED) ---
+  PASS  Block curl -d @file
+  PASS  Block curl --data-binary @file
+  PASS  Block wget --post-file
+  PASS  Block base64 .env
+  PASS  Block cat .env | base64
+  PASS  Block write to /tmp/
+  PASS  Block redirect to /tmp/
+  PASS  Block netcat
+  PASS  Block pbcopy with sensitive file
+
+--- block-data-exfiltration.sh (ALLOWED) ---
+  PASS  Allow normal curl GET
+  PASS  Allow base64 of non-sensitive file
+  PASS  Allow pbcopy of non-sensitive content
+  PASS  Ignore non-Bash tool
+
+--- block-package-install.sh (BLOCKED) ---
+  PASS  Block pip install from git URL
+  PASS  Block pip install from direct URL
+  PASS  Block pip install with custom index
+  PASS  Block npm install from git URL
+  PASS  Block npm install from GitHub shorthand
+  PASS  Block gem install with custom source
+  PASS  Block curl piped to pip
+
+--- block-package-install.sh (ALLOWED) ---
+  PASS  Allow pip install package name
+  PASS  Allow npm install package name
+  PASS  Allow pip install -r requirements.txt
+  PASS  Ignore non-Bash tool
+
+--- block-scope-escape.sh (BLOCKED) ---
+  PASS  Block Read ~/.claude/ file (tilde form)
+  PASS  Block Write to $HOME/.claude/settings.json
+  PASS  Block Edit $HOME/.claude/hooks/hook.sh
+  PASS  Block Read symlink resolving to $HOME/.claude (realpath)
+  PASS  Block bash referencing ~/.claude (literal tilde)
+  PASS  Block bash referencing $HOME/.claude (expanded)
+  PASS  Block write to /etc/
+  PASS  Block write to /Library/ (system)
+  PASS  Block write to /var/cache/
+  PASS  Block write to /var/tmp/ (CLAUDE.md rule 12)
+  PASS  Block write to shell config (~/.bashrc)
+  PASS  Block write to /usr/
+
+--- block-scope-escape.sh (ALLOWED) ---
+  PASS  Allow Read normal file
+  PASS  Allow Bash in project dir
+  PASS  Allow reading /etc/ (not writing)
+  PASS  Allow Read of project-local .claude/commands/ file
+  PASS  Allow Edit of project-local .claude/skills/ file
+  PASS  Allow Write to a project-local .claude/ subfile
+  PASS  Allow Bash cp into ~/Library/Application Support
+  PASS  Allow Bash cp into /var/folders/ (macOS temp)
+  PASS  Allow Bash cp into /var/log/myapp.log
+  PASS  Allow Bash on file with .claude in middle of name
+  PASS  Allow Bash with .bashrc.bak (filename boundary, not real shell config)
+
+--- block-environment-escape.sh (BLOCKED) ---
+  PASS  Block ssh
+  PASS  Block scp
+  PASS  Block rsync to remote
+  PASS  Block docker run
+  PASS  Block docker exec
+  PASS  Block terraform apply
+  PASS  Block terraform destroy
+  PASS  Block kubectl delete
+  PASS  Block kubectl apply
+  PASS  Block export PROD_ env var
+
+--- block-environment-escape.sh (ALLOWED) ---
+  PASS  Allow docker ps
+  PASS  Allow docker logs
+  PASS  Allow terraform plan
+  PASS  Allow kubectl get
+  PASS  Allow local rsync
+  PASS  Ignore non-Bash tool
+
+--- block-pii-leakage.sh (BLOCKED) ---
+  PASS  Block SSN in Write content
+  PASS  Block SSN in Edit new_string
+  PASS  Block SSN in Bash echo
+  PASS  Block Visa card number
+  PASS  Block Mastercard number
+  PASS  Block Amex card number
+  PASS  Block Korean RRN
+  PASS  Block credit card in Bash
+
+--- block-pii-leakage.sh (ALLOWED) ---
+  PASS  Allow normal code in Write
+  PASS  Allow synthetic SSN placeholder
+  PASS  Allow Read tool (not checked)
+  PASS  Allow normal Edit
+
+============================================
+  RED TEAM: Adversarial Bypass Tests
+============================================
+
+--- RT: block-sensitive-files.sh ---
+  PASS  RT: Block .env.backup read
+  PASS  RT: Block nested secrets dir
+  PASS  RT: Block bash cat with quotes around .env
+  PASS  RT: Block bash cat private key
+  PASS  RT: Block bash head with path traversal to .env
+  PASS  RT: Allow file named 'environment.py' (not .env)
+
+--- RT: block-dangerous-commands.sh ---
+  PASS  RT: Block /usr/bin/rm -rf /
+  PASS  RT: Block /bin/rm -rf .
+  PASS  RT: Block /usr/local/bin/sudo apt install
+  PASS  RT: Block UPDATE users SET without WHERE
+  PASS  RT: Allow UPDATE users SET with WHERE
+  PASS  RT: Block kill -SIGKILL
+  PASS  RT: Block /usr/bin/kill -9
+  PASS  RT: Block chained sudo (;&& sudo)
+  PASS  RT: Block curl url | source
+  PASS  RT: Block /usr/bin/dd
+
+--- RT: block-git-commands.sh ---
+  PASS  RT: Block /usr/bin/git push
+  PASS  RT: Block /usr/local/bin/git commit
+  PASS  RT: Block chained git (;&& git)
+  PASS  RT: Block semicolon git (;git)
+  PASS  RT: Allow gitconfig in filename
+
+--- RT: block-data-exfiltration.sh ---
+  PASS  RT: Block curl -d@file (no space before @)
+  PASS  RT: Block curl --data-binary@file (no space)
+  PASS  RT: Block curl --data-urlencode @file
+  PASS  RT: Block cat .env|base64 (no space before pipe)
+  PASS  RT: Block cat .env | openssl enc
+  PASS  RT: Block cat .env | xxd
+  PASS  RT: Block socat TCP connection
+  PASS  RT: Block /usr/bin/nc
+  PASS  RT: Block >> redirect to /tmp
+  PASS  RT: Allow curl GET (no file upload)
+
+--- RT: block-package-install.sh ---
+  PASS  RT: Block pip install --index-url=url (equals)
+  PASS  RT: Block pip install --extra-index-url=url
+  PASS  RT: Block python -m pip install git+url
+  PASS  RT: Block python3 -m pip install from URL
+  PASS  RT: Block npm install --registry=url (equals)
+  PASS  RT: Block gem install --source=url (equals)
+  PASS  RT: Block /usr/local/bin/pip install from git
+  PASS  RT: Allow pip install normal package
+  PASS  RT: Allow npm install normal package
+
+--- RT: block-scope-escape.sh ---
+  PASS  RT: Block ${HOME}/.claude reference
+  PASS  RT: Block dd write to /etc/
+  PASS  RT: Block sed -i on /etc/hosts
+  PASS  RT: Block chmod on /etc/ file
+  PASS  RT: Block Write to expanded $HOME/.claude path
+  PASS  RT: Block cp to /usr/local/bin
+  PASS  RT: Allow sed -i in project dir
+  PASS  RT: Allow dd in project dir
+
+--- RT: block-environment-escape.sh ---
+  PASS  RT: Block /usr/bin/ssh
+  PASS  RT: Block /usr/bin/scp
+  PASS  RT: Block /usr/local/bin/docker run
+  PASS  RT: Block /usr/local/bin/kubectl delete
+  PASS  RT: Block /usr/local/bin/terraform apply
+  PASS  RT: Block chained ssh (;&& ssh)
+  PASS  RT: Allow /usr/local/bin/docker ps (read-only)
+  PASS  RT: Allow /usr/local/bin/kubectl get pods
+
+--- RT: block-pii-leakage.sh ---
+  PASS  RT: Block SSN with spaces (123 45 6789)
+  PASS  RT: Block CC without separators (4111111111111111)
+  PASS  RT: Block CC with spaces (4532 1234 5678 9012)
+  PASS  RT: Block Mastercard without separators
+  PASS  RT: Block Amex without separators
+  PASS  RT: Block SSN in Bash echo with spaces
+  PASS  RT: Block Korean RRN in Edit
+  PASS  RT: Allow 9-digit number (not SSN format)
+  PASS  RT: Allow synthetic CC (4111-1111-1111-1111)
+  PASS  RT: Allow synthetic SSN placeholder
+  PASS  RT: Allow SSN placeholder with spaces
+
+============================================
+  Results: 168 passed, 0 failed
+============================================
+
+  All tests passed.

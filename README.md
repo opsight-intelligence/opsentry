@@ -127,12 +127,15 @@ tests plus 23 network exposure tests.
 
 ---
 
-## Red team tested
+## Red team tested — and reproducible
 
-We attacked our own framework with 8 adversarial attack classes
-and documented every finding, patch, and residual risk.
+We attacked our own framework with 8 adversarial attack classes, patched every
+finding, and documented the residual risk for each. **The adversarial loop is
+shipped in this repository — you can rerun it yourself.**
 
 Read the full report: [docs/red-team-log.md](docs/red-team-log.md)
+
+### Published attack evidence
 
 | Attack | Vector | Status |
 |---|---|---|
@@ -145,7 +148,33 @@ Read the full report: [docs/red-team-log.md](docs/red-team-log.md)
 | 7 | Persistence and delayed execution | Patched |
 | 8 | Hook starvation via resource exhaustion | Patched |
 
-No other AI agent security tool publishes adversarial testing evidence.
+### Run the loop yourself
+
+[`redteam-loop/`](redteam-loop/) is a review-gated attacker/defender harness
+that re-hardens the hooks against novel attacks. Each round:
+
+1. **Attacker** (headless Claude) generates 10 novel PreToolUse payloads.
+2. Attacks are split 80/20 into training and **held-out** sets — the defender
+   never sees the held-out attacks, so regex overfit is detectable.
+3. Each attack runs against every hook in an isolated workdir copy.
+4. **Defender** (headless Claude) receives the failing attacks plus hook
+   sources and returns a unified diff.
+5. The patch is applied to the workdir; `test.sh` must stay green; training
+   and held-out attacks are re-run.
+6. Stops after 3 rounds or two consecutive zero-bypass rounds.
+
+```bash
+bash redteam-loop/run_loop.sh
+```
+
+**Safety properties:** never modifies your live hooks, never runs git, never
+executes the defender patch against the real framework. You review and apply.
+
+Requirements: `claude` CLI on PATH (headless mode), `jq`, `python3`, `patch`.
+See [redteam-loop/README.md](redteam-loop/README.md) for details.
+
+No other AI agent security tool publishes adversarial testing evidence — or
+ships the tooling for you to reproduce and extend it.
 
 ---
 

@@ -1,5 +1,19 @@
 # Changelog
 
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.8.1] - 2026-08-01
+### Changed
+- **CONTRIBUTING.md:** documented the Git Flow branching model, semantic versioning
+  rules, changelog requirement, and documentation requirement. Pull requests now target
+  `develop` rather than `main` — the previous instruction contradicted the branch
+  protection already in place on this repository.
+
 ## [1.8.0] - 2026-04-11
 ### Fixed (Security)
 - **block-scope-escape.sh:** replaced substring matching with precise

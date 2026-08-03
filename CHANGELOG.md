@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-08-03
+
+### Added
+- **CI.** This repository is what `brew install opsentry` and `git clone` pull
+  from, and until now nothing verified it — there were no workflows at all, only
+  issue and PR templates. Every push and pull request now runs the 168-assertion
+  hook suite, lints the Python, and syntax-checks `install.sh` and all eight
+  guardrail hooks so a broken installer cannot ship.
+
+  The workflow is **self-contained** rather than calling the organisation's
+  shared one, which lives in a private repository: a contributor opening a pull
+  request must be able to read every step that gates it, and a private workflow
+  would be invisible to them.
+
+### Fixed
+- `baseline.py` and `blocklog_audit.py` carried `#!/usr/bin/env python3` but were
+  tracked non-executable, so neither could be run directly despite advertising
+  that it could. Found by CI on its first run.
+
 ## [1.8.3] - 2026-08-03
 ### Changed
 - **Version aligned with the OpSentry release line.** This repository had been

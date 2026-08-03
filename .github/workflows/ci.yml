@@ -1,0 +1,55 @@
+# CI for the public OpSentry repository.
+#
+# Self-contained on purpose. The rest of the org calls a reusable workflow that
+# lives in a private repository; this one cannot, because a public repo should
+# not depend on a private repo's workflow to verify itself -- a contributor
+# opening a PR must be able to read every step that gates it, and the private
+# workflow would be invisible to them.
+#
+# This repository is what `brew install opsentry` and `git clone` actually pull
+# from, so until now the two most-used install paths had nothing checking them.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+jobs:
+  test:
+    name: hooks + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install jq
+        # The hooks parse Claude Code's PreToolUse JSON with jq; the suite
+        # cannot run without it. Ubuntu runners ship it, but pinning the install
+        # keeps the requirement visible rather than inherited.
+        run: sudo apt-get install -y jq
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Hook test suite
+        # 168 assertions across the 8 guardrail hooks, simulating the JSON
+        # Claude Code sends on PreToolUse.
+        run: bash test.sh
+
+      - name: Lint
+        run: |
+          # Pinned: ruff's default rule set grows between releases, and an
+          # unpinned upgrade would fail CI on a commit that changed nothing.
+          pip install ruff==0.16.1
+          ruff check opsentry
+
+      - name: Verify the installer is self-consistent
+        # install.sh is the git-clone install path. A broken shebang or syntax
+        # error here breaks the documented install for everyone who does not use
+        # brew or pip, and no test would otherwise catch it.
+        run: |
+          bash -n install.sh
+          bash -n opsentry/install.sh
+          for hook in opsentry/claude/hooks/*.sh; do bash -n "$hook"; done

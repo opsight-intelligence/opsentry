@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-08-03
+### Changed
+- **Version aligned with the OpSentry release line.** This repository had been
+  numbered independently of the line the packaged release follows, so the same
+  work landed here as 1.8.1 and there as 1.8.3. The two now agree, and a version
+  number means the same thing wherever you read it.
+
+  **No functional change.** Every hook script is byte-identical to 1.8.1, and so
+  is what `install.sh` puts on your machine. If you are running 1.8.1 there is
+  nothing to update.
+
+  There is no 1.8.2 in this repository. That version was documentation-only and
+  its shipped artifact was unchanged from 1.8.1, so it is skipped here rather
+  than backfilled with an entry describing changes this repository never made.
+
 ## [1.8.1] - 2026-08-01
 ### Changed
 - **CONTRIBUTING.md:** documented the Git Flow branching model, semantic versioning

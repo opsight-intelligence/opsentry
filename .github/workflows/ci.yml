@@ -40,7 +40,9 @@ jobs:
 
       - name: Lint
         run: |
-          pip install ruff
+          # Pinned: ruff's default rule set grows between releases, and an
+          # unpinned upgrade would fail CI on a commit that changed nothing.
+          pip install ruff==0.16.1
           ruff check opsentry
 
       - name: Verify the installer is self-consistent

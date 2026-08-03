@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request must be able to read every step that gates it, and a private workflow
   would be invisible to them.
 
+### Fixed
+- `baseline.py` and `blocklog_audit.py` carried `#!/usr/bin/env python3` but were
+  tracked non-executable, so neither could be run directly despite advertising
+  that it could. Found by CI on its first run.
+
 ## [1.8.3] - 2026-08-03
 ### Changed
 - **Version aligned with the OpSentry release line.** This repository had been

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.7] - 2026-09-16
+
+### Changed
+- Version kept in step with `opsight-ai-governance` 1.8.7 (its Dependabot actions bump); the two repos are one product release.
+
 ## [1.8.6] - 2026-09-16
 
 ### Changed

@@ -21,7 +21,7 @@ jobs:
     name: hooks + lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install jq
         # The hooks parse Claude Code's PreToolUse JSON with jq; the suite
@@ -29,7 +29,7 @@ jobs:
         # keeps the requirement visible rather than inherited.
         run: sudo apt-get install -y jq
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 

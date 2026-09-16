@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.6] - 2026-09-16
+
+### Changed
+- Dependencies: bump the actions group with 2 updates (Dependabot).
+
 ## [1.8.5] - 2026-09-16
 
 ### Added

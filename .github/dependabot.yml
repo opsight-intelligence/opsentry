@@ -1,0 +1,13 @@
+# Dependency updates, once a month, grouped into one PR per ecosystem so the
+# org's zero-open-PR steady state survives them. Security updates arrive as
+# they are published regardless of the schedule.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies]

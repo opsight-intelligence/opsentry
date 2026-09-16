@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.5] - 2026-09-16
+
+### Added
+- `.github/dependabot.yml`: monthly dependency updates, grouped into one PR per ecosystem (org audit E17).
+
 ## [1.8.4] - 2026-08-03
 
 ### Added

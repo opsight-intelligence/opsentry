@@ -30,7 +30,8 @@ OpSentry is built specifically for this architecture.
 
 ## Install in 2 minutes
 
-**pip (recommended)**
+**pip (recommended)** — the packaged `opsentry` CLI, which adds the config and
+sandbox generators to what this repository installs
 
     pip install opsentry
     opsentry install
@@ -41,7 +42,7 @@ OpSentry is built specifically for this architecture.
     brew install opsentry
     opsentry install
 
-**Git clone**
+**Git clone** — the hooks, rules and settings from this repository
 
     git clone https://github.com/opsight-intelligence/opsentry
     cd opsentry
@@ -64,7 +65,7 @@ Restart Claude Code after install. That's it.
 **Layer 1 — Detect (Runtime Guardrails)**
 8 hook scripts + 18 behavioral rules + 70+ permission denials.
 Pre-execution pattern matching blocks known attack vectors
-before they run. 203 tests. Battle-tested against 8 red team attacks.
+before they run. 168 hook tests. Battle-tested against 8 red team attacks.
 
 **Layer 2 — Prevent (CI/CD Analysis)**
 Cross-file AST composition analysis at PR time.
@@ -77,7 +78,7 @@ dangerous actions at the OS kernel level.
 macOS (sandbox-exec), Linux (bubblewrap), Docker.
 
 ```bash
-opsentry sandbox generate --platform all
+opsentry sandbox generate --platform all   # packaged CLI (pip / Homebrew)
 ```
 
 Each layer uses a different detection strategy. An attacker
@@ -121,9 +122,9 @@ any personal customisations.
 
 ./test.sh
 
-203 automated tests: 168 hook tests (101 functional +
-67 adversarial red-team) plus 42 cross-file composition
-tests plus 23 network exposure tests.
+168 hook tests in this repository (101 functional + 67
+adversarial red-team). The packaged CLI adds cross-file
+composition and network exposure suites.
 
 ---
 
@@ -200,7 +201,7 @@ Full deterministic enforcement requires Claude Code.
 | 70+ permission denials | ✓ | ✓ | ✓ |
 | 3 slash commands | ✓ | ✓ | ✓ |
 | Incident logging | ✓ | ✓ | ✓ |
-| 203 automated tests | ✓ | ✓ | ✓ |
+| 168 hook tests | ✓ | ✓ | ✓ |
 | CI/CD agents (GitHub Actions) | | ✓ | ✓ |
 | Cross-file exfiltration detection (AST) | | ✓ | ✓ |
 | **Sandbox profile generator** | | **✓** | **✓** |

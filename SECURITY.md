@@ -32,7 +32,7 @@ This policy covers:
 
 | Version | Supported |
 |---------|-----------|
-| 1.6.x   | Yes       |
-| < 1.6   | No        |
+| 1.8.x   | Yes       |
+| < 1.8   | No        |
 
 We only provide security fixes for the latest minor version.

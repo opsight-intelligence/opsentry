@@ -25,7 +25,7 @@ If you find a dangerous pattern that OpSentry should block, open an issue with:
 2. Create a feature branch off `develop` (`git checkout -b feature/block-new-pattern develop`)
 3. Make your changes
 4. Run the test suite: `./test.sh`
-5. Ensure all 88+ tests pass
+5. Ensure every test passes (`./test.sh`)
 6. Bump `VERSION`, add a `CHANGELOG.md` entry, and update the docs (see below)
 7. Submit a PR against `develop`
 

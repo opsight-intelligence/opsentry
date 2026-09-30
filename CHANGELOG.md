@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.8] - 2026-09-30
+
+### Changed
+- The quickstart describes the install that exists: the packaged CLI (pip or
+  Homebrew) or `./install.sh` / `./verify.sh` / `./update.sh` / `./test.sh`
+  from a clone. It no longer points at scripts and a wizard this repository
+  does not contain, and it documents `patrol.sh`, `baseline.py`,
+  `blocklog_audit.py` and `OPSENTRY_PKG_ROOT`.
+- `SECURITY.md` lists 1.8.x as the supported line (it still said 1.6.x).
+- The README and CONTRIBUTING give the real test count (168 hook tests here)
+  and say which features come with the packaged CLI.
+- The red-team loop instructions use repository-relative paths.
+
 ## [1.8.7] - 2026-09-16
 
 ### Changed

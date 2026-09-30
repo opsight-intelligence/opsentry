@@ -60,17 +60,19 @@ rounds/<session>/
 ## Review & apply a round
 
 ```
-cd ~/Desktop/repos/agentguard/opsentry/claude/hooks
-patch -p0 < ~/Desktop/repos/agentguard/redteam-loop/rounds/<session>/round-N/patch.diff
+# from the repository root
+cd opsentry/claude/hooks
+patch -p0 < ../../../redteam-loop/rounds/<session>/round-N/patch.diff
+cd ../../..
 # then eyeball new_tests.sh and append lines you want to opsentry/test.sh
-bash ~/Desktop/repos/agentguard/opsentry/test.sh
+bash opsentry/test.sh
 ```
 
 ## How to read the summary
 
 - `heldout_blocked` substantially lower than `training_blocked` = regex
   overfit. Reject the patch or widen the approach.
-- `existing tests P/F` must match baseline (currently 169 / 0). Any
+- `existing tests P/F` must match baseline (currently 168 / 0). Any
   regression means the patch broke an allow case.
 - Monotonic decrease in `unblocked pre` across rounds = real hardening;
   plateau near zero = attacker exhausted.

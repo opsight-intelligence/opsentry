@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.9] - 2026-09-30
+
+### Changed
+- Version kept in step with `opsight-ai-governance` 1.8.9 (a docs-only change there); the two repos are one product release.
+
 ## [1.8.8] - 2026-09-30
 
 ### Changed
